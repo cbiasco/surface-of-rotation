@@ -1,0 +1,176 @@
+<!-- Code by Caleb Biasco (biasc007) -->
+<!-- for Project 3 of CSCI 4611, Fall 2016 -->
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta http-equiv="Content-Type" content="text/html;charset=utf-8" >
+        <title>Programming Assignment 3</title>
+
+        <script id="vertex-shader" type="x-shader/x-vertex">
+            // Code by Caleb Biasco (biasc007)
+            // for Project 3 of CSCI 4611, Fall 2016
+            
+            precision mediump int;
+            precision mediump float;
+            
+            attribute vec4 a_position;
+            attribute vec4 a_normal;
+            attribute float a_dottedLine;
+            attribute vec4 a_color;
+            attribute vec2 a_texcoord;
+            attribute float a_hasMaterial;
+            
+            uniform int mode;
+            uniform mat4 modelView;
+            uniform mat4 projection;
+            uniform vec4 lightDirection;
+            
+            varying float v_hasMaterial;
+            varying vec3 N, L, E;
+            varying vec4 v_color;
+            varying vec2 v_texcoord;
+            
+            void main() {
+                gl_Position = a_position;
+                
+                // Smaller dots indicate lines between control points,
+                // larger dots indicate the control points themselves
+                if (a_dottedLine > 0.5)
+                    gl_PointSize = 3.0;
+                else
+                    gl_PointSize = 10.0;
+                
+                // If we are in view mode, use the model view and
+                // perspective matrices.
+                if (mode == 1)
+                    gl_Position = projection * modelView * a_position;
+                else
+                    gl_Position = a_position;
+
+                // Transform the vertex position to eye coordinates
+                vec3 pos = (modelView * a_position).xyz;
+
+                // Calculate the lighting vectors
+                L = (modelView * (lightDirection)).xyz;
+                E = -pos;
+
+                // Transform the vertex normal to eye coordinates
+                N = (modelView * a_normal).xyz;
+                
+                v_color = a_color;
+                v_texcoord = a_texcoord;
+                
+                v_hasMaterial = a_hasMaterial;
+            }
+        </script>
+
+        <script id="fragment-shader" type="x-shader/x-fragment">
+            // Code by Caleb Biasco (biasc007)
+            // for Project 3 of CSCI 4611, Fall 2016
+        
+            precision mediump int;
+            precision mediump float;
+            
+            uniform int mode;
+            
+            uniform vec4 AmbientProduct;
+            uniform vec4 DiffuseProduct;
+            uniform vec4 SpecularProduct;
+            uniform float Shininess;
+            
+            uniform sampler2D u_texture;
+            uniform int textureEnabled;
+            
+            varying float v_hasMaterial;
+            varying vec3 N, L, E;
+            varying vec4 v_color;
+            varying vec2 v_texcoord;
+            
+            void main() {
+                float kd, ks;
+                vec4 fColor, ambient, diffuse, specular;
+                vec3 H, Nv, Lv, Ev;
+                
+                // Normalize our vectors
+                Nv = normalize(N);
+                Lv = normalize(L);
+                Ev = normalize(E);
+                
+                // If we are in view mode and the particular
+                // fragment has a material
+                if (mode == 1 && v_hasMaterial > 0.5) {
+                    H = normalize(Lv + Ev);
+                    
+                    // If the fragment is on the front face of
+                    // the object
+                    if (!gl_FrontFacing)
+                        Nv = -Nv;
+                
+                    // Compute terms in the illumination equation
+                    ambient = AmbientProduct;
+
+                    kd = max(dot(Lv, Nv), 0.0);
+                    diffuse = kd * DiffuseProduct;
+
+                    ks = pow(max(dot(Nv, H), 0.0), Shininess);
+                    specular = ks * SpecularProduct;
+
+                    if (dot(Lv, Nv) < 0.0) {
+                        specular = vec4(0.0, 0.0, 0.0, 1.0);
+                    }
+
+                    fColor = ambient + diffuse + specular;
+                    fColor.a = 1.0;
+                }
+                else
+                    fColor = v_color;
+                
+                // If the object is not textured, just use the vertex colors
+                if (textureEnabled == 0 || v_texcoord.x < 0.0)
+                    gl_FragColor = fColor;
+                else
+				    gl_FragColor = texture2D(u_texture, v_texcoord) + specular;
+            }
+        </script>
+
+        <!-- Included in the folder but can also be Downloaded: http://www.cs.unm.edu/~angel/WebGL/7E/Common/angelCommon.zip -->
+        <script type="text/javascript" src="webgl-utils.js"></script>
+        <script type="text/javascript" src="initShaders.js"></script>
+        <script type="text/javascript" src="MV.js"></script>
+        <img id="tile-img" src="http://i.imgur.com/DsJDMHZ.png" crossorigin="anonymous" hidden="hidden" />
+        
+    </head>
+
+    <body> 
+        <p id="demo" onload="drawMethod()">Start the Program</p>
+
+        <canvas id="gl-canvas" width="512" height="400">
+            Oops ... your browser doesn't support the HTML5 canvas element
+        </canvas>
+        <script type="text/javascript" src="program3.js"></script>
+        <div id="settingsDiv" style="visibility:hidden">
+            <label id="sweepLabel" for="sweepField">ANGLES:</label>
+            <input type="number" onchange="changeAngleSweep()" type="field" min=2
+                   value=16 id="sweepField"/>
+            <label id="stepsLabel" for="sweepField">STEPS:</label>
+            <input type="number" step=8 min=8 onchange="changeSteps()" type="field" value=16 id="stepsField"/>
+        </div>
+        <div>
+            <input onclick="selectMode()" type="button" value="Start" id="modeButton" />
+            <input onclick="quit()" type="button" value="Quit" id="quitButton" />
+        </div>
+        <div id="radioDiv" style="visibility:hidden" onchange="changeMaterial()">
+            <form onchange="changeMaterial()">
+                <input type="radio" name="material" value="plastic" checked> Yellow Plastic<br>
+                <input type="radio" name="material" value="metal"> Brass Metal<br>
+                <input type="radio" name="material" value="texture"> Tiled (Texture Map)<br>
+            </form>
+        </div>
+        <div id="interpDiv" style="visibility:hidden">
+			<input id="interpolate" type="checkbox" value="interpolate" onchange="changeInterpolation()"
+					checked/>
+			<label id="interpolateLabel" for="interpolate">INTERPOLATE NORMALS</label>
+        </div>
+        
+    </body>
+</html>
